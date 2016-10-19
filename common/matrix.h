@@ -57,6 +57,10 @@ bool matrix_is_on(uint8_t row, uint8_t col);
 matrix_row_t matrix_get_row(uint8_t row);
 /* print matrix for debug */
 void matrix_print(void);
+#if defined(GH60_REV_CHN_MOD1)
+void matrix_sleep(void);
+void matrix_wakeup(void);
+#endif
 
 
 /* power control */

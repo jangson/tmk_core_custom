@@ -36,6 +36,12 @@
   this software.
 */
 
+#if defined(NRF24L01_TMK)
+#include <avr/sleep.h>
+#include "matrix.h"
+#include "ledmap.h"
+#include "RF24_key.h"
+#endif
 #include "report.h"
 #include "host.h"
 #include "host_driver.h"
@@ -151,26 +157,17 @@ static void Console_Task(void)
 void EVENT_USB_Device_Connect(void)
 {
     print("[C]");
-    /* For battery powered device */
     if (!USB_IsInitialized) {
-        USB_Disable();
-        USB_Init();
-        USB_Device_EnableSOFEvents();
+        USB_Connect();
     }
 }
 
 void EVENT_USB_Device_Disconnect(void)
 {
     print("[D]");
-    /* For battery powered device */
-    USB_IsInitialized = false;
-/* TODO: This doesn't work. After several plug in/outs can not be enumerated. 
     if (USB_IsInitialized) {
-        USB_Disable();  // Disable all interrupts
-	USB_Controller_Enable();
-        USB_INT_Enable(USB_INT_VBUSTI);
+		USB_Disconnect();
     }
-*/
 }
 
 void EVENT_USB_Device_Reset(void)
@@ -376,6 +373,50 @@ void EVENT_USB_Device_ControlRequest(void)
 /*******************************************************************************
  * Host driver 
  ******************************************************************************/
+#if defined(NRF24L01_TMK)
+static bool is_matrix_pushed(void)
+{
+	for (uint8_t i = 0; i < MATRIX_ROWS; i++) {
+		if (matrix_get_row(i)) return true;
+	}
+	return false;
+}
+
+static bool is_report_pushed(void)
+{
+    uint8_t *report = (uint8_t *)&keyboard_report_sent;
+    for (int i=0; i<8; i++) {
+        if (report[i]) return true;
+	}
+	return false;
+}
+
+ISR(INT0_vect)
+{
+    dprint("INT0\n");
+}	
+
+ISR(INT1_vect)
+{
+    dprint("INT1\n");
+}	
+
+ISR(INT2_vect)
+{
+    dprint("INT2\n");
+}	
+
+ISR(INT3_vect)
+{
+    dprint("INT3\n");
+}	
+
+ISR(INT6_vect)
+{
+    dprint("INT6\n");
+}	
+#endif
+
 static uint8_t keyboard_leds(void)
 {
     return keyboard_led_stats;
@@ -384,6 +425,15 @@ static uint8_t keyboard_leds(void)
 static void send_keyboard(report_keyboard_t *report)
 {
     uint8_t timeout = 255;
+
+#if defined(NRF24L01_TMK)
+#ifdef NKRO_ENABLE
+    radio_send_key((uint8_t *)report, keyboard_nkro ? NKRO_EPSIZE : KEYBOARD_EPSIZE);
+#else
+    radio_send_key((uint8_t *)report, KEYBOARD_EPSIZE);
+#endif
+    goto clean_up;
+#endif
 
     if (USB_DeviceState != DEVICE_STATE_Configured)
         return;
@@ -418,6 +468,9 @@ static void send_keyboard(report_keyboard_t *report)
     /* Finalize the stream transfer to send the last packet */
     Endpoint_ClearIN();
 
+#if defined(NRF24L01_TMK)
+clean_up:
+#endif
     keyboard_report_sent = *report;
 }
 
@@ -566,8 +619,60 @@ static void setup_mcu(void)
     wdt_disable();
 
     /* Disable clock division */
+#if defined(NRF24L01_TMK)
+    clock_prescale_set(clock_div_2);
+#else 
     clock_prescale_set(clock_div_1);
+#endif
 }
+
+#ifdef DEBUG_SW_UART
+#define SERIAL_BAUD (9600+500)
+#define SERIAL_BPS  (1000000/SERIAL_BAUD)
+inline static void set_tx(uint8_t e)
+{
+    if (e)
+        PORTF |= (1 << 6);
+    else
+        PORTF &= ~(1 << 6);
+}
+
+static int8_t sendchar_func(uint8_t c)
+{
+    int i;
+
+    // start
+    _delay_us(SERIAL_BPS*2);
+    set_tx(0);
+    _delay_us(SERIAL_BPS);
+    // data
+    for (i=0; i<8; i++) {
+        set_tx(c&(1<<i));
+        _delay_us(SERIAL_BPS);
+    }
+    // non parity, stop
+    set_tx(1);
+    _delay_us(SERIAL_BPS*2);
+    return c;
+}
+#endif
+
+#if defined(NRF24L01_TMK)
+static void prepare_suspend(void)
+{
+    matrix_sleep();
+}
+
+static void enter_suspend(void)
+{
+    set_sleep_mode(SLEEP_MODE_STANDBY);
+    sleep_mode();
+}
+static void wakeup_suspend(void)
+{
+    matrix_wakeup();
+}
+#endif
 
 static void setup_usb(void)
 {
@@ -578,7 +683,15 @@ static void setup_usb(void)
 
     // for Console_Task
     USB_Device_EnableSOFEvents();
+
+#ifdef DEBUG_SW_UART
+    DDRF |=  (1 << 6);
+    set_tx(1);
+    _delay_ms(1);
+    print_set_sendchar(sendchar_func);
+#else
     print_set_sendchar(sendchar);
+#endif
 }
 
 int main(void)  __attribute__ ((weak));
@@ -590,6 +703,7 @@ int main(void)
     setup_usb();
     sei();
 
+#if !defined(NRF24L01_TMK)
     /* wait for USB startup & debug output */
     while (USB_DeviceState != DEVICE_STATE_Configured) {
 #if defined(INTERRUPT_CONTROL_ENDPOINT)
@@ -599,6 +713,7 @@ int main(void)
 #endif
     }
     print("USB configured.\n");
+#endif
 
     /* init modules */
     keyboard_init();
@@ -610,12 +725,27 @@ int main(void)
     print("Keyboard start.\n");
     hook_late_init();
     while (1) {
+#if !defined(NRF24L01_TMK)
         while (USB_DeviceState == DEVICE_STATE_Suspended) {
             print("[s]");
             hook_usb_suspend_loop();
         }
+#endif
 
         keyboard_task();
+
+#if defined(NRF24L01_TMK)
+    /* wait for USB startup & debug output */
+        if ( USB_DeviceState == DEVICE_STATE_Unattached
+			&& !is_matrix_pushed()
+			&& !is_report_pushed()) {
+            dprint("[+s]");
+            prepare_suspend();
+            enter_suspend();
+            wakeup_suspend();
+            dprint("[-s]\n");
+        }
+#endif
 
 #if !defined(INTERRUPT_CONTROL_ENDPOINT)
         USB_USBTask();
@@ -629,7 +759,12 @@ __attribute__((weak))
 void hook_early_init(void) {}
 
 __attribute__((weak))
-void hook_late_init(void) {}
+void hook_late_init(void) 
+{
+#if NRF24L01_TMK
+    radio_init_key();
+#endif
+}
 
  __attribute__((weak))
 void hook_usb_suspend_entry(void)

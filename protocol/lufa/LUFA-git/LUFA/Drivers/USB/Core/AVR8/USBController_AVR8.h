@@ -271,6 +271,11 @@
 			 */
 			void USB_Disable(void);
 
+#if defined(GH60_REV_CHN_MOD1)
+            void USB_Connect(void);
+			void USB_Disconnect(void);
+#endif
+
 			/** Resets the interface, when already initialized. This will re-enumerate the device if already connected
 			 *  to a host, or re-enumerate an already attached device when in host mode.
 			 */

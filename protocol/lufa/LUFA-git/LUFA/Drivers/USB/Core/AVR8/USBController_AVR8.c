@@ -126,6 +126,32 @@ void USB_Disable(void)
 	USB_IsInitialized = false;
 }
 
+#if defined(GH60_REV_CHN_MOD1)
+void USB_Connect(void)
+{
+    USB_Controller_Enable();
+	USB_PLL_On();
+	while (!(USB_PLL_IsReady()));
+	USB_CLK_Unfreeze();
+	USB_INT_Clear(USB_INT_WAKEUPI);
+	USB_INT_Enable(USB_INT_SUSPI);
+	USB_INT_Enable(USB_INT_EORSTI);
+	USB_INT_Enable(USB_INT_SOFI);
+	USB_Attach();
+	USB_IsInitialized = true;
+}
+
+void USB_Disconnect(void)
+{
+	USB_INT_Clear(USB_INT_SUSPI);
+    USB_CLK_Freeze();
+	USB_PLL_Off();
+	USB_Controller_Disable();
+	USB_Detach();
+	USB_IsInitialized = false;
+}
+#endif
+
 void USB_ResetInterface(void)
 {
 	#if defined(USB_CAN_BE_BOTH)
