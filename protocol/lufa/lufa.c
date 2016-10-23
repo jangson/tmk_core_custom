@@ -38,6 +38,7 @@
 
 #if defined(NRF24L01_TMK)
 #include <avr/sleep.h>
+#include "timer.h"
 #include "matrix.h"
 #include "ledmap.h"
 #include "RF24_key.h"
@@ -58,6 +59,8 @@
 
 #include "descriptor.h"
 #include "lufa.h"
+
+#define TIMEOUT_SUSPEND 1000
 
 uint8_t keyboard_idle = 0;
 /* 0: Boot Protocol, 1: Report Protocol(default) */
@@ -697,6 +700,9 @@ static void setup_usb(void)
 int main(void)  __attribute__ ((weak));
 int main(void)
 {
+#if defined(NRF24L01_TMK)
+    uint32_t timeout, timenow;
+#endif
     setup_mcu();
     hook_early_init();
     keyboard_setup();
@@ -724,6 +730,11 @@ int main(void)
 
     print("Keyboard start.\n");
     hook_late_init();
+
+#if defined(NRF24L01_TMK)
+    timeout = timer_read32();
+#endif
+
     while (1) {
 #if !defined(NRF24L01_TMK)
         while (USB_DeviceState == DEVICE_STATE_Suspended) {
@@ -735,15 +746,21 @@ int main(void)
         keyboard_task();
 
 #if defined(NRF24L01_TMK)
-    /* wait for USB startup & debug output */
         if ( USB_DeviceState == DEVICE_STATE_Unattached
 			&& !is_matrix_pushed()
 			&& !is_report_pushed()) {
-            dprint("[+s]");
-            prepare_suspend();
-            enter_suspend();
-            wakeup_suspend();
-            dprint("[-s]\n");
+            timenow = timer_read32();
+            if (timenow > (timeout + TIMEOUT_SUSPEND)) {
+                timeout = timer_read32() + TIMEOUT_SUSPEND;
+                dprint("[+s]");
+                prepare_suspend();
+                enter_suspend();
+                wakeup_suspend();
+                dprint("[-s]\n");
+                timeout = timer_read32();
+            } 
+        } else {
+            timeout = timer_read32();
         }
 #endif
 
