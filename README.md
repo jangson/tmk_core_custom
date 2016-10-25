@@ -1,3 +1,8 @@
+# Wireless GH60 satan Keyboard
+This project uses GH60 satan PCB, nRF24 wireless module, LiPo(Li-ion) battery and charger module. I am using HHKB but this layout keyboard is hard to buy and expensive. So I start to build my own HHKB with GH60 satan.
+
+Refer to https://github.com/jangson/tmk_keyboard_custom.git
+
 TMK Keyboard Firmware Core Library
 ==================================
 This is a keyboard firmware library with some useful features for Atmel AVR and Cortex-M.
