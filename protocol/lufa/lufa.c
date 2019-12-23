@@ -429,17 +429,18 @@ static void send_keyboard(report_keyboard_t *report)
 {
     uint8_t timeout = 255;
 
+    // jason.kim 2019.12.23 It is working as USB keyboard when USB is configured.
+    if (USB_DeviceState != DEVICE_STATE_Configured) {
 #if defined(NRF24L01_TMK)
 #ifdef NKRO_ENABLE
-    radio_send_key((uint8_t *)report, keyboard_nkro ? NKRO_EPSIZE : KEYBOARD_EPSIZE);
+        radio_send_key((uint8_t *)report, keyboard_nkro ? NKRO_EPSIZE : KEYBOARD_EPSIZE);
 #else
-    radio_send_key((uint8_t *)report, KEYBOARD_EPSIZE);
+        radio_send_key((uint8_t *)report, KEYBOARD_EPSIZE);
 #endif
-    goto clean_up;
+        goto clean_up;
 #endif
-
-    if (USB_DeviceState != DEVICE_STATE_Configured)
         return;
+    }
 
     /* Select the Keyboard Report Endpoint */
 #ifdef NKRO_ENABLE
